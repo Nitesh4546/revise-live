@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, "Nirmala UI", sans-serif;
+
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-pressed: var(--accent-pressed);
+  --color-accent-text: var(--accent-text);
+  --color-accent-fg: var(--accent-text);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-focus-ring: var(--focus-ring);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-tile-a: var(--tile-a);
+  --color-tile-b: var(--tile-b);
+  --color-tile-c: var(--tile-c);
+  --color-tile-d: var(--tile-d);
+  --color-tile-b-text: var(--tile-b-text);
+  --color-tile-c-text: var(--tile-c-text);
+  --color-text-dark: var(--tile-b-text);
+  --color-okabe-vermillion: var(--tile-a);
+  --color-okabe-skyblue: var(--tile-b);
+  --color-okabe-amber: var(--tile-c);
+  --color-okabe-bluishgreen: var(--tile-d);
+}
+
+:root,
+:root[data-theme="light"],
+:root:not([data-theme="dark"]) {
+  color-scheme: light;
+  --bg: #FFFFFF;
+  --bg-subtle: #F5F5F5;
+  --surface: #FFFFFF;
+  --surface-hover: #F0F0F0;
+  --border: #E0E0E0;
+  --border-subtle: #EBEBEB;
+  --text: #242424;
+  --text-muted: #616161;
+  --text-subtle: #757575;
+  --accent: #0F6CBD;
+  --accent-hover: #0D599A;
+  --accent-pressed: #0C4D84;
+  --accent-text: #FFFFFF;
+  --accent-subtle: #EBF3FC;
+  --focus-ring: #0F6CBD;
+  --danger: #C42B1C;
+  --danger-hover: #A82417;
+  --danger-subtle: #FDF3F2;
+  --success: #0E7A36;
+  --success-subtle: #F1FAF3;
+  --warning: #B86200;
+  --warning-subtle: #FFF8F0;
+
+  /* Okabe-Ito Functional Answer Tile Palette */
+  --tile-a: #C04900;       /* Vermillion / Hexagon - White text */
+  --tile-b: #56B4E9;       /* Sky Blue / Star - Dark text */
+  --tile-c: #E69F00;       /* Amber Orange / Plus - Dark text */
+  --tile-d: #007654;       /* Bluish Green / Crescent - White text */
+  --tile-b-text: #1F1F1F;
+  --tile-c-text: #1F1F1F;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1F1F1F;
+  --bg-subtle: #292929;
+  --surface: #2B2B2B;
+  --surface-hover: #333333;
+  --border: #424242;
+  --border-subtle: #383838;
+  --text: #FFFFFF;
+  --text-muted: #D1D1D1;
+  --text-subtle: #A0A0A0;
+  --accent: #0F6CBD;       /* Primary button fill */
+  --accent-hover: #0D599A;
+  --accent-pressed: #0C4D84;
+  --accent-text: #FFFFFF;
+  --accent-subtle: #19324D;
+  --focus-ring: #479EF5;
+  --danger: #D83B01;
+  --danger-hover: #EA4300;
+  --danger-subtle: #3B1B15;
+  --success: #107C41;
+  --success-subtle: #143622;
+  --warning: #D29200;
+  --warning-subtle: #3E2F0A;
+
+  /* Okabe-Ito Functional Answer Tile Palette */
+  --tile-a: #C04900;
+  --tile-b: #56B4E9;
+  --tile-c: #E69F00;
+  --tile-d: #007654;
+  --tile-b-text: #1F1F1F;
+  --tile-c-text: #1F1F1F;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+    touch-action: manipulation;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* Accessible focus indicators */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Briefly freeze transitions during theme toggle to prevent color flash */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition: none !important;
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Disable double-tap zoom on touch */
+.touch-action-manipulation {
+  touch-action: manipulation;
+}

@@ -1,0 +1,318 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import request from 'supertest';
+import { PDFParse } from 'pdf-parse';
+import { createExpressApp } from '../src/server.js';
+import { setupTestDB, teardownTestDB, clearTestDB } from './setup.js';
+import { sanitizePdfFilename } from '../src/services/pdfService.js';
+
+async function parsePdfBuffer(buffer) {
+  const parser = new PDFParse({ data: buffer });
+  await parser.load();
+  const textObj = await parser.getText();
+  return textObj.text || '';
+}
+
+describe('F6 Quiz PDF Export (Question Paper & Answer Key)', () => {
+  let app;
+  let teacherAToken;
+  let teacherBToken;
+  let teacherAQuiz;
+
+  beforeAll(async () => {
+    await setupTestDB();
+    app = createExpressApp();
+  });
+
+  afterAll(async () => {
+    await teardownTestDB();
+  });
+
+  beforeEach(async () => {
+    await clearTestDB();
+
+    const resA = await request(app).post('/api/auth/register').send({
+      name: 'Teacher A',
+      email: 'teachera@school.edu',
+      password: 'password123'
+    });
+    teacherAToken = resA.body.token;
+
+    const resB = await request(app).post('/api/auth/register').send({
+      name: 'Teacher B',
+      email: 'teacherb@school.edu',
+      password: 'password123'
+    });
+    teacherBToken = resB.body.token;
+
+    const quizRes = await request(app)
+      .post('/api/quizzes')
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .send({
+        title: 'Cellular Respiration & ATP',
+        topic: 'Biology',
+        description: 'Revision quiz on aerobic respiration and electron transport.',
+        difficulty: 'medium',
+        questions: [
+          {
+            questionText: 'Which organelle is the primary site of ATP synthesis?',
+            options: ['Mitochondria', 'Chloroplast', 'Ribosome', 'Golgi Apparatus'],
+            correctIndex: 0,
+            explanation:
+              'Mitochondria perform oxidative phosphorylation producing the majority of ATP in eukaryotic cells.',
+            distractorRationales: [
+              '',
+              'Chloroplasts perform photosynthesis, not general cellular ATP synthesis',
+              'Ribosomes translate proteins',
+              'Golgi bodies package proteins'
+            ],
+            topicTag: 'Cell Organelles',
+            timeLimit: 20
+          },
+          {
+            questionText: 'What is the net yield of ATP produced per glucose in glycolysis?',
+            options: ['2 ATP', '4 ATP', '36 ATP', '0 ATP'],
+            correctIndex: 0,
+            explanation:
+              'Glycolysis uses 2 ATP and produces 4 ATP, resulting in a net gain of 2 ATP per glucose molecule.',
+            distractorRationales: [
+              '',
+              '4 ATP is total produced, but 2 are consumed so net is 2',
+              '36 ATP is estimated total aerobic respiration yield',
+              'Glycolysis yields a positive net ATP'
+            ],
+            topicTag: 'Glycolysis',
+            timeLimit: 20
+          }
+        ]
+      });
+
+    teacherAQuiz = quizRes.body.quiz;
+  });
+
+  it('sanitizes filename correctly with variant suffixes', () => {
+    expect(sanitizePdfFilename('Cellular Respiration & ATP', 'questions')).toBe(
+      'cellular-respiration-atp-questions.pdf'
+    );
+    expect(sanitizePdfFilename('Complex: Title / Subtitle #99!', 'answers')).toBe(
+      'complex-title-subtitle-99-answers.pdf'
+    );
+    expect(sanitizePdfFilename('', 'questions')).toBe('untitled-questions.pdf');
+  });
+
+  it('exports question paper PDF with strict answer masking (no leaks)', async () => {
+    const res = await request(app)
+      .get(`/api/quizzes/${teacherAQuiz._id}/export.pdf?variant=questions`)
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const data = [];
+        res.on('data', (chunk) => data.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(data)));
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="cellular-respiration-atp-questions.pdf"'
+    );
+    expect(res.headers['cache-control']).toBe('no-store');
+
+    const pdfText = await parsePdfBuffer(res.body);
+
+    // Should include title, student header, instructions, questions, and options
+    expect(pdfText).toContain('Cellular Respiration & ATP');
+    expect(pdfText).toContain('Name:');
+    expect(pdfText).toContain('Class:');
+    expect(pdfText).toContain('Instructions: Choose the one best answer');
+    expect(pdfText).toContain('Which organelle is the primary site of ATP synthesis?');
+    expect(pdfText).toContain('A. Mitochondria');
+    expect(pdfText).toContain('B. Chloroplast');
+    expect(pdfText).toContain('What is the net yield of ATP produced per glucose in glycolysis?');
+    expect(pdfText).toContain('A. 2 ATP');
+    expect(pdfText).toContain('Generated by ReviseLive');
+
+    // Strict masking: Must NOT leak any answers, markers, or explanations
+    expect(pdfText).not.toContain('Correct Answer:');
+    expect(pdfText).not.toContain('Concept Anchor:');
+    expect(pdfText).not.toContain('Misconception:');
+    expect(pdfText).not.toContain('[● ✓]');
+    expect(pdfText).not.toContain('Quick Answer Key');
+    expect(pdfText).not.toContain('Mitochondria perform oxidative phosphorylation');
+    expect(pdfText).not.toContain('Chloroplasts perform photosynthesis, not general');
+    expect(pdfText).not.toContain('Cell Organelles'); // per-question topicTag hidden on student paper
+  });
+
+  it('exports answers PDF with correct markers, explanations, rationales, and answer key table', async () => {
+    const res = await request(app)
+      .get(`/api/quizzes/${teacherAQuiz._id}/export.pdf?variant=answers&explanations=1`)
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const data = [];
+        res.on('data', (chunk) => data.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(data)));
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="cellular-respiration-atp-answers.pdf"'
+    );
+
+    const pdfText = await parsePdfBuffer(res.body);
+
+    // Must include answer key header and marks
+    expect(pdfText).toContain('TEACHER ANSWER KEY & CONCEPT ANCHORS');
+    expect(pdfText).toContain('CORRECT');
+    expect(pdfText).toContain('Correct Answer: Option A');
+    expect(pdfText).toContain('Concept Anchor: Mitochondria perform oxidative phosphorylation');
+    expect(pdfText).toContain('Misconception: Chloroplasts perform photosynthesis');
+
+    // Must include Quick Answer Key table at end
+    expect(pdfText).toContain('Quick Answer Key Table');
+    expect(pdfText).toContain('Q1: A');
+    expect(pdfText).toContain('Q2: A');
+  });
+
+  it('omits explanations and rationales in answers PDF when explanations=0', async () => {
+    const res = await request(app)
+      .get(`/api/quizzes/${teacherAQuiz._id}/export.pdf?variant=answers&explanations=0`)
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const data = [];
+        res.on('data', (chunk) => data.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(data)));
+      });
+
+    expect(res.status).toBe(200);
+    const pdfText = await parsePdfBuffer(res.body);
+
+    expect(pdfText).toContain('Correct Answer: Option A');
+    expect(pdfText).toContain('Quick Answer Key Table');
+    expect(pdfText).not.toContain('Concept Anchor:');
+    expect(pdfText).not.toContain('Misconception:');
+    expect(pdfText).not.toContain('Mitochondria perform oxidative phosphorylation');
+  });
+
+  it('renders Devanagari (Hindi) sample correctly and parses text back', async () => {
+    // Create a Hindi quiz
+    const hindiQuizRes = await request(app)
+      .post('/api/quizzes')
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .send({
+        title: 'प्रकाश संश्लेषण और पादप श्वसन',
+        topic: 'जीव विज्ञान',
+        description: 'पौधों में ऊर्जा उत्पादन की प्रक्रिया',
+        difficulty: 'medium',
+        questions: [
+          {
+            questionText: 'पौधे सूर्य के प्रकाश का उपयोग करके क्या बनाते हैं?',
+            options: ['ग्लूकोज और ऑक्सीजन', 'केवल कार्बन डाइऑक्साइड', 'पानी और नाइट्रोजन', 'अमोनिया'],
+            correctIndex: 0,
+            explanation: 'प्रकाश संश्लेषण प्रक्रिया में पौधे प्रकाश की उपस्थिति में ग्लूकोज और ऑक्सीजन बनाते हैं।',
+            topicTag: 'प्रकाश संश्लेषण',
+            timeLimit: 20
+          }
+        ]
+      });
+
+    expect(hindiQuizRes.status).toBe(201);
+    const hindiQuizId = hindiQuizRes.body.quiz._id;
+
+    const res = await request(app)
+      .get(`/api/quizzes/${hindiQuizId}/export.pdf?variant=questions`)
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const data = [];
+        res.on('data', (chunk) => data.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(data)));
+      });
+
+    expect(res.status).toBe(200);
+    const pdfText = await parsePdfBuffer(res.body);
+
+    // Hindi text must parse back cleanly
+    expect(pdfText).toContain('प्रकाश संश्लेषण');
+    expect(pdfText).toContain('ऑक्सीजन');
+  });
+
+  it('returns 404 when requested by a different teacher (ownership check)', async () => {
+    const res = await request(app)
+      .get(`/api/quizzes/${teacherAQuiz._id}/export.pdf?variant=questions`)
+      .set('Authorization', `Bearer ${teacherBToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('QUIZ_NOT_FOUND');
+  });
+
+  it('returns 401 when unauthenticated', async () => {
+    const res = await request(app).get(`/api/quizzes/${teacherAQuiz._id}/export.pdf?variant=questions`);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for non-existent or invalid quiz ID', async () => {
+    const res = await request(app)
+      .get('/api/quizzes/507f1f77bcf86cd799439011/export.pdf?variant=questions')
+      .set('Authorization', `Bearer ${teacherAToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('QUIZ_NOT_FOUND');
+
+    const invalidRes = await request(app)
+      .get('/api/quizzes/invalid-id/export.pdf?variant=questions')
+      .set('Authorization', `Bearer ${teacherAToken}`);
+
+    expect(invalidRes.status).toBe(404);
+    expect(invalidRes.body.error.code).toBe('QUIZ_NOT_FOUND');
+  });
+
+  it('paginates multi-question quizzes across multiple pages with footers', async () => {
+    // Create a 12-question quiz
+    const questions = [];
+    for (let i = 1; i <= 12; i++) {
+      questions.push({
+        questionText: `Question #${i}: Detailed question text that takes up space in the question paper?`,
+        options: [`Option A for question ${i}`, `Option B for question ${i}`, `Option C for question ${i}`, `Option D for question ${i}`],
+        correctIndex: (i - 1) % 4,
+        explanation: `Concept anchor explanation for question ${i}`,
+        topicTag: 'Biology',
+        timeLimit: 20
+      });
+    }
+
+    const multiRes = await request(app)
+      .post('/api/quizzes')
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .send({
+        title: 'Long Multi Page Quiz',
+        topic: 'Biology',
+        difficulty: 'medium',
+        questions
+      });
+
+    const multiId = multiRes.body.quiz._id;
+
+    const res = await request(app)
+      .get(`/api/quizzes/${multiId}/export.pdf?variant=questions`)
+      .set('Authorization', `Bearer ${teacherAToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const data = [];
+        res.on('data', (chunk) => data.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(data)));
+      });
+
+    expect(res.status).toBe(200);
+
+    const parser = new PDFParse({ data: res.body });
+    await parser.load();
+    const textObj = await parser.getText();
+
+    // Must have multiple pages
+    expect(textObj.total).toBeGreaterThan(1);
+    expect(textObj.text).toContain('Page 1 of 2');
+    expect(textObj.text).toContain('Page 2 of 2');
+  });
+});

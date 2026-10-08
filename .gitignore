@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Production builds
+dist/
+client/dist/
+build/
+
+# Environment and sensitive keys
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+!**/.env.example
+
+# Markdown files (excluded per requirement)
+*.md
+**/*.md
+
+# Logs & coverage
+logs/
+*.log
+coverage/
+*.lcov
+
+# Editor & OS artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.tempmediaStorage/
