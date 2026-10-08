@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -87,16 +88,31 @@ export function startServer(port = env.PORT) {
 
   const sweeperInterval = registerSocketHandlers(io);
 
-  // Serve static files in production if client/dist exists
+  // Serve static files in production if client/dist exists, or provide root status for API-only deployments
   if (env.NODE_ENV === 'production') {
     const clientDistPath = path.resolve(__dirname, '../../client/dist');
-    app.use(express.static(clientDistPath));
-    app.get('*', (req, res, next) => {
-      if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/socket.io')) {
-        return next();
-      }
-      res.sendFile(path.join(clientDistPath, 'index.html'));
-    });
+    const indexHtmlPath = path.join(clientDistPath, 'index.html');
+
+    if (fs.existsSync(indexHtmlPath)) {
+      app.use(express.static(clientDistPath));
+      app.get('*', (req, res, next) => {
+        if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/socket.io')) {
+          return next();
+        }
+        res.sendFile(indexHtmlPath);
+      });
+    } else {
+      // Backend-only deployment (Render backend with separate frontend on Vercel)
+      app.get('/favicon.ico', (req, res) => res.status(204).end());
+      app.get('/', (req, res) => {
+        res.status(200).json({
+          status: 'ok',
+          service: 'ReviseLive API & WebSocket Server',
+          environment: 'production',
+          health: '/api/health'
+        });
+      });
+    }
   }
 
   // Not found & error handlers
