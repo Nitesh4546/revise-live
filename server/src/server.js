@@ -23,6 +23,24 @@ import { registerSocketHandlers } from './sockets/socketHandler.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (env.NODE_ENV !== 'production') return true;
+
+  const cleanOrigin = origin.replace(/\/+$/, '');
+  const configuredClients = (env.CLIENT_URL || '')
+    .split(',')
+    .map((url) => url.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  if (configuredClients.includes(cleanOrigin)) return true;
+  if (/^http:\/\/localhost(:\d+)?$/.test(cleanOrigin)) return true;
+  if (cleanOrigin.endsWith('.vercel.app')) return true;
+  if (cleanOrigin.endsWith('.onrender.com')) return true;
+
+  return false;
+}
+
 export function createExpressApp() {
   const app = express();
 
@@ -35,10 +53,10 @@ export function createExpressApp() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, server-to-server) or matching CLIENT_URL
-        if (!origin || origin === env.CLIENT_URL || env.NODE_ENV !== 'production') {
+        if (isOriginAllowed(origin)) {
           callback(null, true);
         } else {
+          logger.warn(`Blocked request from unallowed origin: ${origin}`);
           callback(new Error('Blocked by CORS'));
         }
       },
@@ -74,9 +92,10 @@ export function startServer(port = env.PORT) {
   const io = new Server(server, {
     cors: {
       origin: (origin, callback) => {
-        if (!origin || origin === env.CLIENT_URL || env.NODE_ENV !== 'production') {
+        if (isOriginAllowed(origin)) {
           callback(null, true);
         } else {
+          logger.warn(`Blocked socket connection from unallowed origin: ${origin}`);
           callback(new Error('Blocked by CORS'));
         }
       },
